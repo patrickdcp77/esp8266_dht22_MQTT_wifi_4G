@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <Adafruit_BME280.h>
-#include <DHT.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -20,10 +19,9 @@
 // =====================================================
 
 #define BME280_ADDRESS 0x76
-#define SEALEVEL_PRESSURE_HPA 1013.25f
-
-#define DHT22_PIN 4
-#define DHT_TYPE DHT22
+#define SEALEVEL_PRESSURE_HPA 1016.0f
+#define MIN_VALID_PRESSURE_HPA 850.0f
+#define MAX_VALID_PRESSURE_HPA 1100.0f
 
 // Publication toutes les 5 secondes
 constexpr unsigned long PUBLISH_INTERVAL_MS = 5000UL;
@@ -38,25 +36,31 @@ const char *flashedSketchName() {
 
 struct MeasurementFrame {
   bool bmeValid;
-  float externalTemperatureC;
-  float externalHumidity;
+  float temperatureC;
+  float humidity;
+  float pressurePa;
   float pressureHpa;
+  float pressureMmHg;
   float altitudeM;
-
-  bool dhtValid;
-  float internalTemperatureC;
-  float internalHumidity;
 
   int wifiRssi;
 };
 
 Adafruit_BME280 bme;
-DHT dht(DHT22_PIN, DHT_TYPE);
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 bool bmeReady = false;
+float lastValidPressureHpa = NAN;
+float lastValidAltitudeM = NAN;
+
+bool isPressurePlausible(float pressureHpa) {
+  return
+    !isnan(pressureHpa) &&
+    pressureHpa >= MIN_VALID_PRESSURE_HPA &&
+    pressureHpa <= MAX_VALID_PRESSURE_HPA;
+}
 
 // =====================================================
 // Lecture des mesures
@@ -66,36 +70,52 @@ MeasurementFrame readMeasurements() {
   MeasurementFrame frame{};
 
   frame.bmeValid = false;
-  frame.dhtValid = false;
 
-  frame.externalTemperatureC = NAN;
-  frame.externalHumidity = NAN;
+  frame.temperatureC = NAN;
+  frame.humidity = NAN;
+  frame.pressurePa = NAN;
   frame.pressureHpa = NAN;
+  frame.pressureMmHg = NAN;
   frame.altitudeM = NAN;
-
-  frame.internalTemperatureC = NAN;
-  frame.internalHumidity = NAN;
 
   frame.wifiRssi = WiFi.RSSI();
 
   if (bmeReady) {
-    frame.externalTemperatureC = bme.readTemperature();
-    frame.externalHumidity = bme.readHumidity();
-    frame.pressureHpa = bme.readPressure() / 100.0f;
+    frame.temperatureC = bme.readTemperature();
+    frame.humidity = bme.readHumidity();
+    frame.pressurePa = bme.readPressure();
+    frame.pressureHpa = frame.pressurePa / 100.0f;
+    frame.pressureMmHg = frame.pressurePa / 133.322f;
     frame.altitudeM = bme.readAltitude(SEALEVEL_PRESSURE_HPA);
 
+    if (isPressurePlausible(frame.pressureHpa)) {
+      lastValidPressureHpa = frame.pressureHpa;
+      lastValidAltitudeM = frame.altitudeM;
+    } else if (!isnan(lastValidPressureHpa)) {
+      Serial.print("Lecture pression aberrante ignoree : ");
+      Serial.print(frame.pressureHpa, 2);
+      Serial.println(" hPa");
+
+      frame.pressureHpa = lastValidPressureHpa;
+      frame.pressurePa = lastValidPressureHpa * 100.0f;
+      frame.pressureMmHg = frame.pressurePa / 133.322f;
+      frame.altitudeM = lastValidAltitudeM;
+    } else {
+      Serial.print("Lecture pression hors plage : ");
+      Serial.print(frame.pressureHpa, 2);
+      Serial.println(" hPa");
+
+      frame.pressurePa = NAN;
+      frame.pressureHpa = NAN;
+      frame.pressureMmHg = NAN;
+      frame.altitudeM = NAN;
+    }
+
     frame.bmeValid =
-      !isnan(frame.externalTemperatureC) &&
-      !isnan(frame.externalHumidity) &&
+      !isnan(frame.temperatureC) &&
+      !isnan(frame.humidity) &&
       !isnan(frame.pressureHpa);
   }
-
-  frame.internalTemperatureC = dht.readTemperature();
-  frame.internalHumidity = dht.readHumidity();
-
-  frame.dhtValid =
-    !isnan(frame.internalTemperatureC) &&
-    !isnan(frame.internalHumidity);
 
   return frame;
 }
@@ -212,10 +232,10 @@ void publishMeasurements(const MeasurementFrame &frame) {
     payload,
     sizeof(payload),
     "{"
-      "\"device\":\"esp32c3-bme280-dht22\","
+      "\"device\":\"esp32c3-bme280\","
       "\"wifi_ssid\":\"%s\","
       "\"wifi_rssi\":%d,"
-      "\"external\":{"
+      "\"measurement\":{"
         "\"sensor\":\"BME280\","
         "\"address\":\"0x76\","
         "\"valid\":%s,"
@@ -223,26 +243,15 @@ void publishMeasurements(const MeasurementFrame &frame) {
         "\"humidity_pct\":%.2f,"
         "\"pressure_hpa\":%.2f,"
         "\"altitude_m\":%.2f"
-      "},"
-      "\"internal\":{"
-        "\"sensor\":\"DHT22\","
-        "\"pin\":%d,"
-        "\"valid\":%s,"
-        "\"temperature_c\":%.2f,"
-        "\"humidity_pct\":%.2f"
       "}"
     "}",
     WIFI_SSID,
     frame.wifiRssi,
     frame.bmeValid ? "true" : "false",
-    frame.externalTemperatureC,
-    frame.externalHumidity,
+    frame.temperatureC,
+    frame.humidity,
     frame.pressureHpa,
-    frame.altitudeM,
-    DHT22_PIN,
-    frame.dhtValid ? "true" : "false",
-    frame.internalTemperatureC,
-    frame.internalHumidity
+    frame.altitudeM
   );
 
   if (written < 0) {
@@ -289,7 +298,7 @@ void printMeasurements() {
   MeasurementFrame frame = readMeasurements();
 
   Serial.println();
-  Serial.println("Mesures BME280 + DHT22");
+  Serial.println("Mesures BME280");
 
   if (!frame.bmeValid) {
     Serial.println("Capteur BME280 non initialise ou lecture invalide");
@@ -297,37 +306,28 @@ void printMeasurements() {
     Serial.println("BME280 (0x76)");
 
     Serial.print("Temperature : ");
-    Serial.print(frame.externalTemperatureC, 2);
+    Serial.print(frame.temperatureC, 2);
     Serial.println(" C");
 
     Serial.print("Humidite : ");
-    Serial.print(frame.externalHumidity, 2);
+    Serial.print(frame.humidity, 2);
     Serial.println(" %");
 
     Serial.print("Pression : ");
     Serial.print(frame.pressureHpa, 2);
     Serial.println(" hPa");
 
+    Serial.print("Pression brute : ");
+    Serial.print(frame.pressurePa, 2);
+    Serial.println(" Pa");
+
+    Serial.print("Equivalent mmHg : ");
+    Serial.print(frame.pressureMmHg, 2);
+    Serial.println(" mmHg");
+
     Serial.print("Altitude approx. : ");
     Serial.print(frame.altitudeM, 2);
     Serial.println(" m");
-  }
-
-  Serial.println();
-
-  Serial.print("DHT22 GPIO");
-  Serial.println(DHT22_PIN);
-
-  if (!frame.dhtValid) {
-    Serial.println("Lecture DHT22 invalide");
-  } else {
-    Serial.print("Temperature : ");
-    Serial.print(frame.internalTemperatureC, 2);
-    Serial.println(" C");
-
-    Serial.print("Humidite : ");
-    Serial.print(frame.internalHumidity, 2);
-    Serial.println(" %");
   }
 
   Serial.println();
@@ -369,9 +369,6 @@ void setup() {
   Serial.print("Adresse BME280 = 0x");
   Serial.println(BME280_ADDRESS, HEX);
 
-  Serial.print("DHT22 sur GPIO");
-  Serial.println(DHT22_PIN);
-
   Serial.print("Broker MQTT : ");
   Serial.print(MQTT_HOST);
   Serial.print(":");
@@ -390,6 +387,9 @@ void setup() {
   } else {
     Serial.println("BME280 initialise");
 
+    Serial.print("ID capteur = 0x");
+    Serial.println(bme.sensorID(), HEX);
+
     bme.setSampling(
       Adafruit_BME280::MODE_NORMAL,
       Adafruit_BME280::SAMPLING_X2,
@@ -399,9 +399,6 @@ void setup() {
       Adafruit_BME280::STANDBY_MS_500
     );
   }
-
-  dht.begin();
-  delay(2000);
 
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 

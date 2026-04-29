@@ -2,15 +2,15 @@
 
 ## Identite
 
-- Nom du projet : ESP32 Super Mini C3 - BME280 / DHT22 / MQTT / Wi-Fi
-- Objectif : mesurer l'environnement avec deux capteurs et publier les donnees vers un broker MQTT
+- Nom du projet : ESP32 Super Mini C3 - BME280 / MQTT / Wi-Fi
+- Objectif : mesurer l'environnement avec un BME280 et publier les donnees vers un broker MQTT
 - Framework : Arduino
 - Environnement de build : PlatformIO
 - Carte cible : `esp32-c3-devkitc-02`
 
 ## Resume fonctionnel
 
-Le programme initialise un BME280 en I2C et un DHT22 sur une entree numerique, lit periodiquement leurs mesures, affiche les resultats sur le port serie, puis publie un message JSON sur un topic MQTT.
+Le programme initialise un BME280 en I2C, lit periodiquement ses mesures, affiche les resultats sur le port serie, puis publie un message JSON sur un topic MQTT.
 
 Le projet est adapte a un usage de station meteo embarquee ou de telemetrie environnementale vers Node-RED, Home Assistant ou tout autre consommateur MQTT.
 
@@ -18,8 +18,7 @@ Le projet est adapte a un usage de station meteo embarquee ou de telemetrie envi
 
 ### 1. Acquisition des mesures
 
-- Lecture BME280 : temperature externe, humidite, pression, altitude estimee
-- Lecture DHT22 : temperature interne, humidite interne
+- Lecture BME280 : temperature, humidite, pression, altitude estimee
 - Validation des lectures avec rejet des valeurs `NaN`
 
 ### 2. Connectivite reseau
@@ -39,7 +38,7 @@ Le projet est adapte a un usage de station meteo embarquee ou de telemetrie envi
 ### 4. Diagnostic serie
 
 - Affichage du nom du fichier flashe
-- Etat d'initialisation des capteurs
+- Etat d'initialisation du capteur
 - Affichage detaille des mesures
 - Traces de debug lors des echecs Wi-Fi, DNS, TCP ou MQTT
 
@@ -49,17 +48,16 @@ Le payload JSON contient :
 
 - l'identite de l'appareil
 - le SSID Wi-Fi et le RSSI
-- un bloc `external` pour le BME280
-- un bloc `internal` pour le DHT22
+- un bloc `measurement` pour le BME280
 
 Exemple simplifie :
 
 ```json
 {
-  "device": "esp32c3-bme280-dht22",
+  "device": "esp32c3-bme280",
   "wifi_ssid": "mon-reseau",
   "wifi_rssi": -61,
-  "external": {
+  "measurement": {
     "sensor": "BME280",
     "address": "0x76",
     "valid": true,
@@ -67,13 +65,6 @@ Exemple simplifie :
     "humidity_pct": 48.20,
     "pressure_hpa": 1012.44,
     "altitude_m": 6.82
-  },
-  "internal": {
-    "sensor": "DHT22",
-    "pin": 4,
-    "valid": true,
-    "temperature_c": 25.00,
-    "humidity_pct": 47.10
   }
 }
 ```
@@ -82,7 +73,6 @@ Exemple simplifie :
 
 - BME280 SDA -> GPIO8
 - BME280 SCL -> GPIO9
-- DHT22 DATA -> GPIO4
 - VCC/GND selon la tension supportee par les modules utilises
 
 Des visuels de brochage sont disponibles dans le dossier `documents/images/`.
@@ -90,8 +80,6 @@ Des visuels de brochage sont disponibles dans le dossier `documents/images/`.
 ## Dependances
 
 - `Adafruit BME280 Library`
-- `DHT sensor library`
-- `Adafruit Unified Sensor`
 - `PubSubClient`
 
 ## Points techniques notables
