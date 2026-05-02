@@ -2,15 +2,15 @@
 
 ## Identite
 
-- Nom du projet : ESP32 Super Mini C3 - BME280 / MQTT / Wi-Fi
-- Objectif : mesurer l'environnement avec un BME280 et publier les donnees vers un broker MQTT
+- Nom du projet : ESP32 Super Mini C3 - DHT22 / MQTT / Wi-Fi
+- Objectif : mesurer l'environnement avec un DHT22 et publier les donnees vers un broker MQTT
 - Framework : Arduino
 - Environnement de build : PlatformIO
 - Carte cible : `esp32-c3-devkitc-02`
 
 ## Resume fonctionnel
 
-Le programme initialise un BME280 en I2C, lit periodiquement ses mesures, affiche les resultats sur le port serie, puis publie un message JSON sur un topic MQTT.
+Le programme initialise un DHT22 sur GPIO4, lit periodiquement ses mesures, affiche les resultats sur le port serie, puis publie un message JSON sur un topic MQTT.
 
 Le projet est adapte a un usage de station meteo embarquee ou de telemetrie environnementale vers Node-RED, Home Assistant ou tout autre consommateur MQTT.
 
@@ -18,7 +18,7 @@ Le projet est adapte a un usage de station meteo embarquee ou de telemetrie envi
 
 ### 1. Acquisition des mesures
 
-- Lecture BME280 : temperature, humidite, pression, altitude estimee
+- Lecture DHT22 : temperature et humidite
 - Validation des lectures avec rejet des valeurs `NaN`
 
 ### 2. Connectivite reseau
@@ -48,45 +48,44 @@ Le payload JSON contient :
 
 - l'identite de l'appareil
 - le SSID Wi-Fi et le RSSI
-- un bloc `measurement` pour le BME280
+- un bloc `measurement` pour le DHT22
 
 Exemple simplifie :
 
 ```json
 {
-  "device": "esp32c3-bme280",
+  "device": "esp32c3-dht22",
   "wifi_ssid": "mon-reseau",
   "wifi_rssi": -61,
   "measurement": {
-    "sensor": "BME280",
-    "address": "0x76",
+    "sensor": "DHT22",
+    "gpio": 4,
     "valid": true,
     "temperature_c": 24.13,
-    "humidity_pct": 48.20,
-    "pressure_hpa": 1012.44,
-    "altitude_m": 6.82
+    "humidity_pct": 48.20
   }
 }
 ```
 
 ## Cablage actuel
 
-- BME280 SDA -> GPIO8
-- BME280 SCL -> GPIO9
-- VCC/GND selon la tension supportee par les modules utilises
+- DHT22 DATA -> GPIO4
+- DHT22 VCC -> 3V3
+- DHT22 GND -> GND
+- Resistance de tirage 10 kOhm recommandee entre DATA et 3V3 si le module n'en integre pas
 
 Des visuels de brochage sont disponibles dans le dossier `documents/images/`.
 
 ## Dependances
 
-- `Adafruit BME280 Library`
+- `DHT sensor library`
 - `PubSubClient`
 
 ## Points techniques notables
 
 - Le buffer MQTT est augmente a 768 octets pour accepter le payload JSON complet
 - Les drapeaux `ARDUINO_USB_MODE=1` et `ARDUINO_USB_CDC_ON_BOOT=1` sont actifs pour le port serie USB natif de l'ESP32-C3
-- Le niveau de la mer est fixe a `1013.25 hPa` pour le calcul d'altitude
+- Le DHT22 fournit temperature et humidite uniquement, sans pression ni altitude
 
 ## Configuration locale requise
 

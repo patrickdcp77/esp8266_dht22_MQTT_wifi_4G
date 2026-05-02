@@ -18,7 +18,8 @@
 // Capteurs
 // =====================================================
 
-#define BME280_ADDRESS 0x76
+#define BME280_ADDRESS_PRIMARY 0x76
+#define BME280_ADDRESS_SECONDARY 0x77
 #define SEALEVEL_PRESSURE_HPA 1016.0f
 #define MIN_VALID_PRESSURE_HPA 850.0f
 #define MAX_VALID_PRESSURE_HPA 1100.0f
@@ -52,8 +53,41 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 bool bmeReady = false;
+uint8_t bmeAddress = BME280_ADDRESS_PRIMARY;
 float lastValidPressureHpa = NAN;
 float lastValidAltitudeM = NAN;
+
+void scanI2cBus() {
+  Serial.println("Scan I2C en cours...");
+
+  bool foundDevice = false;
+
+  for (uint8_t address = 1; address < 127; ++address) {
+    Wire.beginTransmission(address);
+
+    if (Wire.endTransmission() == 0) {
+      Serial.print("Peripherique I2C detecte a 0x");
+      if (address < 16) {
+        Serial.print('0');
+      }
+      Serial.println(address, HEX);
+      foundDevice = true;
+    }
+  }
+
+  if (!foundDevice) {
+    Serial.println("Aucun peripherique I2C detecte");
+  }
+}
+
+bool tryInitializeBmeAtAddress(uint8_t address) {
+  if (!bme.begin(address, &Wire)) {
+    return false;
+  }
+
+  bmeAddress = address;
+  return true;
+}
 
 bool isPressurePlausible(float pressureHpa) {
   return
@@ -221,6 +255,11 @@ bool ensureMqttConnected() {
 void publishMeasurements(const MeasurementFrame &frame) {
   ensureWifiConnected();
 
+  if (!frame.bmeValid) {
+    Serial.println("Publication abandonnee : mesure BME280 invalide");
+    return;
+  }
+
   if (!ensureMqttConnected()) {
     Serial.println("Publication abandonnee : MQTT non connecte");
     return;
@@ -366,8 +405,11 @@ void setup() {
   Serial.print("I2C SCL = ");
   Serial.println(SCL_PIN);
 
-  Serial.print("Adresse BME280 = 0x");
-  Serial.println(BME280_ADDRESS, HEX);
+  Serial.print("Adresse BME280 prioritaire = 0x");
+  Serial.println(BME280_ADDRESS_PRIMARY, HEX);
+
+  Serial.print("Adresse BME280 secondaire = 0x");
+  Serial.println(BME280_ADDRESS_SECONDARY, HEX);
 
   Serial.print("Broker MQTT : ");
   Serial.print(MQTT_HOST);
@@ -380,15 +422,22 @@ void setup() {
   Serial.print("Client MQTT : ");
   Serial.println(MQTT_CLIENT_ID);
 
-  bmeReady = bme.begin(BME280_ADDRESS, &Wire);
+  scanI2cBus();
+
+  bmeReady =
+    tryInitializeBmeAtAddress(BME280_ADDRESS_PRIMARY) ||
+    tryInitializeBmeAtAddress(BME280_ADDRESS_SECONDARY);
 
   if (!bmeReady) {
-    Serial.println("Echec initialisation BME280 sur 0x76");
+    Serial.println("Echec initialisation BME280 sur 0x76/0x77");
   } else {
     Serial.println("BME280 initialise");
 
     Serial.print("ID capteur = 0x");
     Serial.println(bme.sensorID(), HEX);
+
+    Serial.print("Adresse active = 0x");
+    Serial.println(bmeAddress, HEX);
 
     bme.setSampling(
       Adafruit_BME280::MODE_NORMAL,
