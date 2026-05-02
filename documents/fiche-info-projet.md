@@ -2,15 +2,17 @@
 
 ## Identite
 
-- Nom du projet : ESP32 Super Mini C3 - DHT22 / MQTT / Wi-Fi
+- Nom du projet : ESP8266 D1 mini - DHT22 / MQTT / Wi-Fi
 - Objectif : mesurer l'environnement avec un DHT22 et publier les donnees vers un broker MQTT
 - Framework : Arduino
 - Environnement de build : PlatformIO
-- Carte cible : `esp32-c3-devkitc-02`
+- Carte cible : `d1_mini`
 
 ## Resume fonctionnel
 
-Le programme initialise un DHT22 sur GPIO4, lit periodiquement ses mesures, affiche les resultats sur le port serie, puis publie un message JSON sur un topic MQTT.
+Le programme initialise un DHT22 sur D2 (GPIO4), lit periodiquement ses mesures, affiche les resultats sur le port serie, puis publie un message JSON sur un topic MQTT.
+
+Au demarrage, le module scanne les reseaux Wi-Fi visibles, tente d'abord une connexion sur le SSID principal configure, puis bascule sur le SSID de secours si le principal n'est pas detecte.
 
 Le projet est adapte a un usage de station meteo embarquee ou de telemetrie environnementale vers Node-RED, Home Assistant ou tout autre consommateur MQTT.
 
@@ -20,10 +22,13 @@ Le projet est adapte a un usage de station meteo embarquee ou de telemetrie envi
 
 - Lecture DHT22 : temperature et humidite
 - Validation des lectures avec rejet des valeurs `NaN`
+- Reutilisation de la derniere mesure valide si une lecture ponctuelle echoue
 
 ### 2. Connectivite reseau
 
 - Connexion au Wi-Fi en mode station
+- Scan des SSID disponibles avant connexion
+- Priorite au reseau principal avec fallback automatique vers le reseau de secours
 - Desactivation de la mise en veille Wi-Fi pour une liaison plus stable
 - Affichage de l'adresse IP locale et du RSSI
 
@@ -54,7 +59,7 @@ Exemple simplifie :
 
 ```json
 {
-  "device": "esp32c3-dht22",
+  "device": "esp8266-dht22",
   "wifi_ssid": "mon-reseau",
   "wifi_rssi": -61,
   "measurement": {
@@ -69,7 +74,7 @@ Exemple simplifie :
 
 ## Cablage actuel
 
-- DHT22 DATA -> GPIO4
+- DHT22 DATA -> D2 (GPIO4)
 - DHT22 VCC -> 3V3
 - DHT22 GND -> GND
 - Resistance de tirage 10 kOhm recommandee entre DATA et 3V3 si le module n'en integre pas
@@ -84,15 +89,18 @@ Des visuels de brochage sont disponibles dans le dossier `documents/images/`.
 ## Points techniques notables
 
 - Le buffer MQTT est augmente a 768 octets pour accepter le payload JSON complet
-- Les drapeaux `ARDUINO_USB_MODE=1` et `ARDUINO_USB_CDC_ON_BOOT=1` sont actifs pour le port serie USB natif de l'ESP32-C3
+- La cible PlatformIO active est `d1_mini` sur plateforme `espressif8266`
 - Le DHT22 fournit temperature et humidite uniquement, sans pression ni altitude
+- La publication MQTT est effectuee toutes les 60 secondes
 
 ## Configuration locale requise
 
 Les secrets ne sont pas versionnes. Renseigner localement :
 
-- SSID Wi-Fi
-- mot de passe Wi-Fi
+- SSID Wi-Fi principal
+- mot de passe Wi-Fi principal
+- SSID Wi-Fi de secours
+- mot de passe Wi-Fi de secours
 - hote MQTT
 - port MQTT
 - topic MQTT
